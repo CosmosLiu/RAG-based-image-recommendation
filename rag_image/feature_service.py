@@ -62,9 +62,9 @@ def call_chat_completion(messages: list, model: str) -> Dict[str, str]:
 
 
 def get_image_base64(image_url: str) -> str:
-    """下载图片并转为 Base64"""
-    print(f"  [图片下载] 正在从外部 URL 抓取图片到内存中: {image_url}")
+    """下载图片并转为 Base64（支持 HTTP URL 和本地文件路径）"""
     if image_url.startswith("http"):
+        print(f"  [图片下载] 正在从外部 URL 抓取图片到内存中: {image_url}")
         t0 = time.time()
         resp = requests.get(image_url)
         resp.raise_for_status()
@@ -73,7 +73,18 @@ def get_image_base64(image_url: str) -> str:
         print(f"  [图片下载] 抓取成功！图片大小: {len(resp.content)/1024:.2f} KB，耗时 {time.time()-t0:.2f} 秒")
         return f"data:{mime_type};base64,{base64_data}"
     else:
-        raise ValueError("目前仅支持 HTTP/HTTPS 图片 URL")
+        print(f"  [图片读取] 正在从本地路径读取图片: {image_url}")
+        import os
+        if not os.path.exists(image_url):
+            raise ValueError(f"本地文件不存在: {image_url}")
+        ext = os.path.splitext(image_url)[1].lower()
+        mime_map = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp"}
+        mime_type = mime_map.get(ext, "image/jpeg")
+        with open(image_url, "rb") as f:
+            content = f.read()
+        base64_data = base64.b64encode(content).decode("utf-8")
+        print(f"  [图片读取] 读取成功！图片大小: {len(content)/1024:.2f} KB")
+        return f"data:{mime_type};base64,{base64_data}"
 
 
 def extract_features_from_image(image_url: str) -> Dict[str, Any]:

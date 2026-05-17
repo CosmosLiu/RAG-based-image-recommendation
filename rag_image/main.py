@@ -1,10 +1,16 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi.staticfiles import StaticFiles
 import uvicorn
+import os
 from schemas import SaveImageRequest, TextRecommendRequest, ImageRecommendRequest, RecommendResponse
 from milvus_db import MilvusModel
 from feature_service import extract_features_from_image, extract_features_from_text
 
 app = FastAPI(title="Image RAG Demo")
+
+UPLOAD_DIR = os.path.join(os.path.dirname(__file__), "uploads")
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 print("初始化 Milvus 客户端实例...")
 milvus_db = MilvusModel(auto_create=True, load_collection=True)
@@ -40,6 +46,44 @@ async def save_image_rag(request: SaveImageRequest):
     print("=> 成功! 图片 RAG 多路数据已安全落盘到 Milvus。")
     print(f"{'='*60}\n")
     return {"message": "Success", "image_url": request.image_url}
+
+
+@app.post("/api/v1/images/upload")
+async def upload_and_rag(uid: str = Form(...), file: UploadFile = File(...)):
+    """上传本地图片文件，一站式完成特征提取和向量入库"""
+    print(f"\n{'='*60}\n[API 接口请求] -> 上传图片文件入库 (RAG)")
+    print(f"用户 UID: {uid}")
+    print(f"文件名: {file.filename}")
+
+    safe_filename = file.filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    save_path = os.path.join(UPLOAD_DIR, safe_filename)
+
+    with open(save_path, "wb") as f:
+        f.write(await file.read())
+    print(f"文件已保存至: {save_path}")
+
+    if milvus_db.check_exists(uid, safe_filename):
+        print("=> 提示: 当前图片已存在于向量库中，跳过处理。")
+        print(f"{'='*60}\n")
+        return {"message": "Image already exists.", "image_url": f"/uploads/{safe_filename}"}
+
+    features = extract_features_from_image(save_path)
+
+    print("\n▶ 步骤 3: 正在将多路向量和元数据存入 Milvus 数据库...")
+    data = {
+        "uid": uid,
+        "image_id": safe_filename,
+        "visible_context": features["visible_context"],
+        "visible_context_vector": features["visible_context_vector"],
+        "hidden_context": features["hidden_context"],
+        "hidden_context_vector": features["hidden_context_vector"],
+        "description": features["description"],
+        "description_vector": features["description_vector"]
+    }
+    milvus_db.insert_data([data])
+    print("=> 成功! 图片 RAG 多路数据已安全落盘到 Milvus。")
+    print(f"{'='*60}\n")
+    return {"message": "Success", "image_url": f"/uploads/{safe_filename}"}
 
 
 @app.post("/api/v1/recommend/text", response_model=RecommendResponse)

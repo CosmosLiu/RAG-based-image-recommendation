@@ -22,12 +22,13 @@
 
 
 2. **图片入库页 (Upload Tab):**
-* UI 需求：页面中央实现一个大面积的虚线拖拽区域（使用 `react-dropzone`）。
+* UI 需求：页面中央实现一个大面积的虚线拖拽区域（使用 `react-dropzone`）。同时支持**点击选择图片**和**拖曳图片到区域**两种方式上传。
 * 交互流程：
-1. 用户拖入本地图片后，UI 显示上传中状态及图片缩略图。
-2. **注意点：** 前端需先 Mock 一个“上传到图床”的动作，将本地 File 对象转换为一个伪造的公网 `image_url`（例如：`[https://mock-image-server.com/](https://mock-image-server.com/){filename}`）。
-3. 拿到 URL 后，调用后端的 `/api/v1/images/rag` 接口进行入库。
-4. 成功后显示成功状态（CheckCircle 图标），并提供“继续上传”按钮。
+1. 用户点击选择或拖入本地图片后，UI 显示上传中状态及图片缩略图。
+2. 前端将本地 File 对象通过 `FormData` 直接上传到后端 `/api/v1/images/upload` 接口（`uid` + `file` 两个字段）。
+3. 后端接收文件后一站式完成：保存图片 → 特征提取 → 向量入库，返回成功结果。
+4. 前端收到成功响应后显示完成状态（CheckCircle 图标），并提供”继续上传”按钮。
+5. 若上传失败（如重复图片），显示对应的错误提示。
 
 
 
@@ -42,17 +43,24 @@
 **四、 后端 API 接口契约**
 后端运行在 `[http://127.0.0.1:8000](http://127.0.0.1:8000)`。前端需在 `vite.config.js` 中配置 `/api` 代理以解决 CORS 问题。
 
-* **1. 图片入库 (POST `/api/v1/images/rag`)**
+* **1. 图片文件上传+入库 (POST `/api/v1/images/upload`)**  **[新增接口]**
+* **Content-Type:** `multipart/form-data`
+* **Fields:** `uid` (string), `file` (binary)
+* **Response:** `{ "message": "Success", "image_url": "string" }`
+* **说明:** 一步完成文件上传、特征提取和向量入库，替代原有的两步 Mock URL 方案。
+
+
+* **2. 图片 URL 入库 (POST `/api/v1/images/rag`)**  **[保留，用于 URL 导入]**
 * **Payload:** `{ "uid": "string", "image_url": "string" }`
 * **Response:** `{ "message": "Success", "image_url": "string" }`
 
 
-* **2. 文本搜图 (POST `/api/v1/recommend/text`)**
+* **3. 文本搜图 (POST `/api/v1/recommend/text`)**
 * **Payload:** `{ "uid": "string", "query": "string", "top_k": 6 }`
 * **Response:** `{ "results": ["url1", "url2", ...] }`
 
 
-* *(备用)* **3. 图片搜图 (POST `/api/v1/recommend/image`)**
+* *(备用)* **4. 图片搜图 (POST `/api/v1/recommend/image`)**
 * **Payload:** `{ "uid": "string", "image_url": "string", "top_k": 6 }`
 * **Response:** `{ "results": ["url1", "url2", ...] }`
 
@@ -63,7 +71,7 @@
 1. 初始化 Vite React 项目并安装 Tailwind CSS、`lucide-react`、`react-dropzone`。
 2. 配置 `vite.config.js` 的 proxy 代理转发。
 3. 编写 `App.jsx` 主体框架，实现状态管理（当前 Tab、全局 UID）。
-4. 实现 `UploadSection` 组件，重点处理拖拽逻辑和 Mock URL 转换。
+4. 实现 `UploadSection` 组件，通过 `react-dropzone` 同时支持点击选择和拖曳上传，使用 FormData 将文件直传后端 `/api/v1/images/upload`。
 5. 实现 `SearchSection` 组件，完成搜索请求和结果的优雅渲染。
 6. 检查所有网络请求的错误处理和 Loading 状态。
 
